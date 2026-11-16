@@ -1,0 +1,58 @@
+name: hkc-sim-collector
+
+services:
+  robotwin:
+    image: ${HKC_SIM_IMAGE:-hkc-sim-collector:robotwin-2.0}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        ROBOTWIN_BASE_IMAGE: ${ROBOTWIN_BASE_IMAGE:-ubuntu:22.04}
+    init: true
+    gpus: ${HKC_SIM_GPU:-all}
+    shm_size: ${HKC_SIM_SHM_SIZE:-8gb}
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      XAUTHORITY: /tmp/.Xauthority
+      NVIDIA_VISIBLE_DEVICES: ${HKC_SIM_GPU:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+    volumes:
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+      - type: bind
+        source: ${XAUTHORITY:-/run/user/1000/gdm/Xauthority}
+        target: /tmp/.Xauthority
+        read_only: true
+      - type: bind
+        source: ./configs
+        target: /workspace/configs
+        read_only: true
+      - type: bind
+        source: ./scripts
+        target: /workspace/scripts
+        read_only: true
+      - type: bind
+        source: ./src
+        target: /workspace/src
+        read_only: true
+      - type: bind
+        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/assets
+        target: /opt/robotwin/assets
+      - type: bind
+        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/staging
+        target: /data/staging
+      - type: bind
+        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/raw
+        target: /data/raw
+      - type: bind
+        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/lerobot
+        target: /data/lerobot
+      - type: bind
+        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/logs
+        target: /data/logs
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: ["bash"]
+

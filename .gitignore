@@ -1,0 +1,61 @@
+# Local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Upstream source checkouts and runtime state
+vendor/
+third_party/
+runtime/
+assets/
+cache/
+staging/
+raw/
+lerobot/
+outputs/
+logs/
+releases/
+
+# Generated collection manifests
+manifests/*.json
+manifests/*.jsonl
+
+# Datasets, videos, archives, models and checkpoints
+*.h5
+*.hdf5
+*.parquet
+*.mp4
+*.avi
+*.mkv
+*.bag
+*.mcap
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Tests may deliberately contain tiny fixtures later
+!tests/fixtures/**
+
