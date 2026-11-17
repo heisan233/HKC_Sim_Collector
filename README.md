@@ -1,10 +1,23 @@
 # HKC Sim Collector
 
-HKC 仿真数据采集项目。第一阶段基于 RoboTwin 2.0，在独立 Docker 容器中完成仿真、原始数据保存和 LeRobot v3 转换；现有 VLA 数据平台不放入本仓库，也不由本项目修改。
+HKC 仿真数据采集项目。项目使用两个相互隔离的 Docker 镜像完成：
+
+1. RoboTwin 2.0 仿真和 XPolicyLab HDF5 采集；
+2. HDF5 到 LeRobot v3.0 的转换与校验。
+
+现有 VLA 数据平台不放入本仓库，也不由本项目修改。
 
 ## 当前状态
 
-当前仅完成独立项目骨架。Dockerfile 还是占位版本，尚未锁定 RoboTwin、XPolicyLab、CuRobo、SAPIEN、PyTorch、CUDA 和 LeRobot 版本，因此暂时不要用于正式采集。
+本机端到端最小流程已于 2026-11-17 验证通过：
+
+- RoboTwin 仿真采集 1 个 Episode；
+- 输出有效 XPolicyLab HDF5 和预览视频；
+- 转换得到 LeRobot v3.0：114 帧、1 个任务、4 路视频；
+- LeRobot 0.6.2 能加载数据集和首帧；
+- 动作与状态均为 14 维。
+
+固定版本见 `docker/versions.lock.json`，兼容性说明见 `docs/version-compatibility.md`。
 
 ## 目录说明
 
@@ -31,11 +44,73 @@ compose.yaml      本地与服务器共用的容器入口
 
 默认运行数据放在被 Git 忽略的 `runtime/` 中。服务器部署时会通过环境变量将它改到 `/srv/hkc-ai/simulation/robotwin/`。
 
+## RoboTwin 采集
+
+离屏采集速度更快，结果会写入 HDF5 和 MP4：
+
+```bash
+./scripts/collect.sh \
+  --dataset test-beat-block-001 \
+  --task beat_block_hammer \
+  --episodes 1 \
+  --embodiment aloha-agilex \
+  --gpu 0
+```
+
+需要同时观看规划和正式采集窗口时使用独立脚本：
+
+```bash
+./scripts/collect_windows.sh \
+  --dataset test-beat-block-window-001 \
+  --task beat_block_hammer \
+  --episodes 1 \
+  --embodiment aloha-agilex \
+  --gpu 0
+```
+
+窗口模式必须从 Ubuntu 图形桌面的终端运行。两种模式都不会覆盖已有数据集，结果位于 `runtime/raw/<数据集名称>/`。
+
+## LeRobot v3 转换
+
+构建转换镜像：
+
+```bash
+./scripts/build_converter.sh
+```
+
+网络受限时，可在 `.env` 中设置 `LEROBOT_BASE_IMAGE`、`LEROBOT_GIT_URL` 和 `PIP_INDEX_URL`，不会改变锁定的源码提交与依赖版本。
+
+转换已采集的数据集：
+
+```bash
+./scripts/convert_to_lerobot.sh \
+  --source test-beat-block-002 \
+  --output test-beat-block-002-lerobot-v3
+```
+
+转换流程会：
+
+- 拒绝覆盖已有目标；
+- 先写入 `runtime/staging/`；
+- 验证 v3 元数据、Parquet、视频和首帧加载；
+- 验证通过后原子发布到 `runtime/lerobot/<输出名称>/`；
+- 写入 `runtime/manifests/<输出名称>.json` 转换来源记录。
+
+## 数据位置
+
+```text
+runtime/raw/        RoboTwin HDF5 原始采集结果
+runtime/lerobot/    已验证的 LeRobot v3 数据集
+runtime/staging/    采集或转换暂存目录
+runtime/manifests/  转换来源记录
+runtime/assets/     RoboTwin 大型资产
+runtime/cache/      下载缓存
+```
+
 ## 下一步
 
-1. 锁定上游源码和依赖版本。
-2. 替换占位 Dockerfile。
-3. 下载最小机器人与任务资产。
-4. 在 RTX 4060 上执行 1～3 个 Episode 的最小验证。
-5. 验证通过后再制作服务器离线部署包。
+1. 由用户验收本机转换结果；
+2. 增加一条采集后自动调用转换的统一入口；
+3. 在服务器完成 GPU、图形桌面、采集和转换复验；
+4. 再接入 VLA 数据平台上传工具。
 

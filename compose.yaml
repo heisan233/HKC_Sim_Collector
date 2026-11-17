@@ -7,7 +7,14 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       args:
-        ROBOTWIN_BASE_IMAGE: ${ROBOTWIN_BASE_IMAGE:-ubuntu:22.04}
+        ROBOTWIN_BASE_IMAGE: ${ROBOTWIN_BASE_IMAGE:-nvidia/cuda:12.1.1-devel-ubuntu22.04@sha256:7012e535a47883527d402da998384c30b936140c05e2537158c80b8143ee7425}
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        ROBOTWIN_GIT_URL: ${ROBOTWIN_GIT_URL:-https://github.com/RoboTwin-Platform/RoboTwin.git}
+        XPOLICYLAB_GIT_URL: ${XPOLICYLAB_GIT_URL:-https://github.com/XPolicyLab/XPolicyLab.git}
+        CUROBO_GIT_URL: ${CUROBO_GIT_URL:-https://github.com/NVlabs/curobo.git}
+        PYTORCH3D_GIT_URL: ${PYTORCH3D_GIT_URL:-https://github.com/facebookresearch/pytorch3d.git}
     init: true
     gpus: ${HKC_SIM_GPU:-all}
     shm_size: ${HKC_SIM_SHM_SIZE:-8gb}
@@ -37,21 +44,45 @@ services:
         target: /workspace/src
         read_only: true
       - type: bind
+        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}
+        target: /runtime
+      - type: bind
         source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/assets
         target: /opt/robotwin/assets
+    working_dir: /opt/robotwin
+    stdin_open: true
+    tty: true
+    command: ["bash"]
+
+  converter:
+    image: ${HKC_CONVERTER_IMAGE:-hkc-sim-collector:lerobot-v0.6.2}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.lerobot
+      args:
+        ROBOTWIN_SOURCE_IMAGE: ${HKC_SIM_IMAGE:-hkc-sim-collector:robotwin-2.0}
+        LEROBOT_BASE_IMAGE: ${LEROBOT_BASE_IMAGE:-nvidia/cuda:12.8.1-base-ubuntu24.04@sha256:133c78a0575303be34164d0b90137a042172bdf60696af01a3c424ab402d86e2}
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        LEROBOT_GIT_URL: ${LEROBOT_GIT_URL:-https://github.com/huggingface/lerobot.git}
+    init: true
+    gpus: ${HKC_SIM_GPU:-all}
+    shm_size: ${HKC_SIM_SHM_SIZE:-8gb}
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${HKC_SIM_GPU:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      HF_HOME: /runtime/cache/huggingface
+      HF_LEROBOT_HOME: /runtime/lerobot
+    volumes:
       - type: bind
-        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/staging
-        target: /data/staging
+        source: ./scripts
+        target: /workspace/scripts
+        read_only: true
       - type: bind
-        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/raw
-        target: /data/raw
-      - type: bind
-        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/lerobot
-        target: /data/lerobot
-      - type: bind
-        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}/logs
-        target: /data/logs
-    working_dir: /workspace
+        source: ${HKC_SIM_RUNTIME_ROOT:-./runtime}
+        target: /runtime
+    working_dir: /opt/robotwin
     stdin_open: true
     tty: true
     command: ["bash"]

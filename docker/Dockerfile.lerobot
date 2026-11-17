@@ -1,0 +1,153 @@
+ARG ROBOTWIN_SOURCE_IMAGE=hkc-sim-collector:robotwin-2.0
+ARG LEROBOT_BASE_IMAGE=nvidia/cuda:12.8.1-base-ubuntu24.04@sha256:133c78a0575303be34164d0b90137a042172bdf60696af01a3c424ab402d86e2
+
+FROM ${ROBOTWIN_SOURCE_IMAGE} AS robotwin_source
+FROM ${LEROBOT_BASE_IMAGE}
+
+ARG APP_UID=1000
+ARG APP_GID=1000
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG LEROBOT_COMMIT=dc0cee9c75e3cc684e4756013e214888176f2c15
+ARG LEROBOT_GIT_URL=https://github.com/huggingface/lerobot.git
+ARG UV_VERSION=0.8.15
+
+LABEL org.opencontainers.image.title="HKC LeRobot v3 Converter"
+LABEL org.opencontainers.image.description="Pinned XPolicyLab HDF5 to LeRobot v3 conversion runtime"
+LABEL org.opencontainers.image.revision="${LEROBOT_COMMIT}"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    UV_HTTP_TIMEOUT=180 \
+    UV_LINK_MODE=copy \
+    PATH=/opt/lerobot/.venv/bin:/opt/uv/bin:${PATH} \
+    PYTHONPATH=/opt/robotwin \
+    HF_HOME=/runtime/cache/huggingface \
+    HF_LEROBOT_HOME=/runtime/lerobot \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates curl ffmpeg git \
+      libegl1 libgl1 libglib2.0-0 \
+      python3.12 python3.12-dev python3.12-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.12 -m venv /opt/uv
+
+ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
+    UV_DEFAULT_INDEX=${PIP_INDEX_URL}
+
+RUN /opt/uv/bin/python -m pip install --no-cache-dir "uv==${UV_VERSION}"
+
+RUN git init /opt/lerobot \
+    && git -C /opt/lerobot remote add origin "${LEROBOT_GIT_URL}" \
+    && git -C /opt/lerobot fetch --depth 1 origin "${LEROBOT_COMMIT}" \
+    && git -C /opt/lerobot checkout --detach FETCH_HEAD \
+    && test "$(git -C /opt/lerobot rev-parse HEAD)" = "${LEROBOT_COMMIT}" \
+    && cd /opt/lerobot \
+    && /opt/uv/bin/uv sync --frozen --extra dataset --no-dev --no-cache
+
+# XPolicyLab's HDF5 loader is outside LeRobot's dataset extra. Keep the
+# version already validated in the pinned RoboTwin collection runtime.
+RUN /opt/uv/bin/uv pip install \
+      --python /opt/lerobot/.venv/bin/python \
+      --no-cache \
+      "h5py==3.11.0"
+
+COPY --from=robotwin_source /opt/robotwin/XPolicyLab/utils /opt/robotwin/XPolicyLab/utils
+COPY --from=robotwin_source /opt/robotwin/XPolicyLab/scripts/transform_lerobot_v30_format.py /opt/robotwin/XPolicyLab/scripts/transform_lerobot_v30_format.py
+COPY --from=robotwin_source /opt/robotwin/env_cfg /opt/robotwin/env_cfg
+COPY --from=robotwin_source /opt/hkc-robotwin-versions.txt /opt/hkc-robotwin-versions.txt
+
+# Preserve RoboTwin's fourth camera and adapt XPolicyLab's converter to the
+# DatasetWriter/RGBEncoderConfig API used by the pinned LeRobot 0.6.2 commit.
+RUN python3.12 - <<'PY'
+from pathlib import Path
+
+path = Path("/opt/robotwin/XPolicyLab/scripts/transform_lerobot_v30_format.py")
+text = path.read_text(encoding="utf-8")
+patches = [
+    (
+        "portable H.264 encoder",
+        '    video_backend: str | None = "h264_nvenc"\n',
+        '    video_backend: str | None = "h264"\n',
+    ),
+    (
+        "camera map",
+        '''    "cam_right_wrist": [
+        ("vision", "cam_right_wrist", "colors"),
+    ],
+}
+''',
+        '''    "cam_right_wrist": [
+        ("vision", "cam_right_wrist", "colors"),
+    ],
+    "cam_third_view": [
+        ("vision", "cam_third_view", "colors"),
+    ],
+}
+''',
+    ),
+    (
+        "RGB encoder import",
+        "from lerobot.utils.constants import HF_LEROBOT_HOME\n",
+        "from lerobot.configs.video import RGBEncoderConfig\n"
+        "from lerobot.utils.constants import HF_LEROBOT_HOME\n",
+    ),
+    (
+        "dataset encoder config",
+        '''        streaming_encoding=dataset_config.streaming_encoding,
+        video_backend=dataset_config.video_backend,
+''',
+        '''        streaming_encoding=dataset_config.streaming_encoding,
+        video_backend="pyav",
+        rgb_encoder=RGBEncoderConfig(
+            vcodec=dataset_config.video_backend or "auto",
+            crf=dataset_config.video_crf,
+        ),
+''',
+    ),
+    (
+        "streaming writer lookup",
+        '''    streaming_encoder = getattr(dataset, "_streaming_encoder", None)
+''',
+        '''    writer = getattr(dataset, "writer", None)
+    streaming_encoder = getattr(writer, "_streaming_encoder", None)
+''',
+    ),
+    (
+        "streaming encoder CRF",
+        '''    streaming_encoder.crf = dataset_config.video_crf
+''',
+        '''    streaming_encoder._rgb_encoder.crf = dataset_config.video_crf
+''',
+    ),
+]
+
+for name, old, new in patches:
+    if text.count(old) != 1:
+        raise RuntimeError(f"XPolicyLab {name} patch location was not found exactly once")
+    text = text.replace(old, new, 1)
+
+path.write_text(text, encoding="utf-8")
+PY
+
+RUN grep -Fx 'XPOLICYLAB_COMMIT=fa431ecd893ee706883e64fe5fe1464ec8cd928d' /opt/hkc-robotwin-versions.txt \
+    && /opt/lerobot/.venv/bin/python -c "import importlib.metadata as m; assert m.version('lerobot') == '0.6.2'" \
+    && /opt/uv/bin/uv pip check --python /opt/lerobot/.venv/bin/python \
+    && printf '%s\n' \
+         "LEROBOT_COMMIT=${LEROBOT_COMMIT}" \
+         "XPOLICYLAB_COMMIT=fa431ecd893ee706883e64fe5fe1464ec8cd928d" \
+         > /opt/hkc-converter-versions.txt \
+    && rm -rf /opt/lerobot/.git /root/.cache /tmp/* \
+    && mkdir -p /home/hkc /runtime /workspace \
+    && chown "${APP_UID}:${APP_GID}" /opt/robotwin \
+    && chown -R "${APP_UID}:${APP_GID}" /home/hkc /runtime /workspace
+
+ENV HOME=/home/hkc
+
+USER ${APP_UID}:${APP_GID}
+WORKDIR /opt/robotwin
+
+CMD ["/bin/bash"]

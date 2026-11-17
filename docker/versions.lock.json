@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "status": "local_end_to_end_validated",
+  "architecture": "linux/amd64",
+  "gpu_compute_capability": "8.9",
+  "design": "split_simulator_and_converter_images",
+  "simulator": {
+    "image_name": "hkc-sim-collector:robotwin-2.0",
+    "base_image": "nvidia/cuda:12.1.1-devel-ubuntu22.04@sha256:7012e535a47883527d402da998384c30b936140c05e2537158c80b8143ee7425",
+    "base_image_amd64_digest": "sha256:327c9e046fbf662275be0934742f7e5412f9b24402ee90bf4d649c1a21707912",
+    "python": "3.10",
+    "cuda": "12.1.1",
+    "pytorch": "2.4.1+cu121",
+    "torchvision": "0.19.1+cu121",
+    "robotwin": {
+      "repository": "https://github.com/RoboTwin-Platform/RoboTwin.git",
+      "commit": "ea8b21121ebb3cd201ff5b3fe361944ac94eda3f"
+    },
+    "xpolicylab": {
+      "repository": "https://github.com/XPolicyLab/XPolicyLab.git",
+      "commit": "fa431ecd893ee706883e64fe5fe1464ec8cd928d"
+    },
+    "curobo": {
+      "repository": "https://github.com/NVlabs/curobo.git",
+      "tag": "v0.7.8",
+      "commit": "d64c4b005459db10c5dd867d8b30a87d5bda9bdb"
+    },
+    "pytorch3d": {
+      "repository": "https://github.com/facebookresearch/pytorch3d.git",
+      "tag": "stable",
+      "commit": "75ebeeaea0908c5527e7b1e305fbc7681382db47"
+    },
+    "assets": {
+      "repository": "https://huggingface.co/datasets/TianxingChen/RoboTwin2.0",
+      "revision": "3dc3b798668feb99ac61cc9086d84cbcc3d79186",
+      "minimal_archives": [
+        "embodiments.zip",
+        "objects.zip"
+      ],
+      "optional_archives": [
+        "background_texture.zip"
+      ]
+    },
+    "sapien": "3.0.0b1",
+    "mplib": "0.2.1",
+    "numpy": "1.26.4",
+    "opencv_python": "4.10.0.84",
+    "scipy": "1.10.1",
+    "trimesh": "4.4.3",
+    "open3d": "0.18.0",
+    "imageio": "2.34.2",
+    "warp_lang": "1.12.0",
+    "setuptools": "69.5.1"
+  },
+  "converter": {
+    "image_name": "hkc-sim-collector:lerobot-v0.6.2",
+    "base_image": "nvidia/cuda:12.8.1-base-ubuntu24.04@sha256:133c78a0575303be34164d0b90137a042172bdf60696af01a3c424ab402d86e2",
+    "base_image_amd64_digest": "sha256:e711c99333fdfe8ae1e677b4972be6c5021f0128a1d31f775c7e58d88921b6a9",
+    "python": "3.12",
+    "cuda": "12.8.1",
+    "lerobot": {
+      "repository": "https://github.com/huggingface/lerobot.git",
+      "package_version": "0.6.2",
+      "commit": "dc0cee9c75e3cc684e4756013e214888176f2c15",
+      "git_tag_exists": false,
+      "install_mode": "upstream_uv_lock"
+    },
+    "pytorch": "2.11.0+cu128",
+    "torchvision": "0.26.0+cu128",
+    "numpy": "2.2.6",
+    "opencv_python_headless": "4.13.0.92",
+    "av": "15.1.0",
+    "h5py": "3.11.0",
+    "video_encoder": {
+      "backend": "pyav",
+      "codec": "h264",
+      "crf": 18
+    },
+    "xpolicylab_converter_commit": "fa431ecd893ee706883e64fe5fe1464ec8cd928d"
+  },
+  "local_validation": {
+    "date": "2026-11-17",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "source_format": "XPolicyLab HDF5",
+    "output_format": "LeRobot v3.0",
+    "episodes": 1,
+    "frames": 114,
+    "tasks": 1,
+    "video_features": 4,
+    "action_shape": 14,
+    "state_shape": 14
+  }
+}
