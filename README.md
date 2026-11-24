@@ -96,6 +96,26 @@ compose.yaml      本地与服务器共用的容器入口
 - 验证通过后原子发布到 `runtime/lerobot/<输出名称>/`；
 - 写入 `runtime/manifests/<输出名称>.json` 转换来源记录。
 
+## 一条命令完成采集与转换
+
+完成镜像构建和资产下载后，可以使用统一入口顺序执行采集、转换和校验：
+
+```bash
+./scripts/collect_and_convert.sh \
+  --dataset pipeline-beat-block-001 \
+  --task beat_block_hammer \
+  --episodes 1 \
+  --embodiment aloha-agilex \
+  --gpu 0
+```
+
+需要观看规划和正式采集窗口时增加 `--show-window`。默认输出名称为
+`<数据集名称>-lerobot-v3`，也可通过 `--output` 指定。
+
+统一入口不会合并两个镜像：RoboTwin 镜像仍负责 HDF5 采集，LeRobot 镜像仍负责
+转换与验证。采集失败时不会开始转换；转换失败时保留已经完成的原始 HDF5，便于
+修复后单独重试。完整日志写入 `runtime/logs/<数据集名称>-pipeline.log`。
+
 ## 数据位置
 
 ```text
@@ -109,8 +129,7 @@ runtime/cache/      下载缓存
 
 ## 下一步
 
-1. 由用户验收本机转换结果；
-2. 增加一条采集后自动调用转换的统一入口；
-3. 在服务器完成 GPU、图形桌面、采集和转换复验；
-4. 再接入 VLA 数据平台上传工具。
+1. 由用户验收本机统一采集与转换入口；
+2. 在服务器完成 GPU、图形桌面、采集和转换复验；
+3. 再接入 VLA 数据平台上传工具。
 

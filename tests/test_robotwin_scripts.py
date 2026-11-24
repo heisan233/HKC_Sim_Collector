@@ -1,4 +1,6 @@
+import os
 from pathlib import Path
+import subprocess
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +17,7 @@ def test_robotwin_operational_scripts_exist() -> None:
         "collect_in_container.sh",
         "collect_windows.sh",
         "collect_windows_in_container.sh",
+        "collect_and_convert.sh",
         "convert_to_lerobot.sh",
         "convert_in_container.sh",
         "validate_lerobot_v3.py",
@@ -74,3 +77,145 @@ def test_validator_accepts_lerobot_task_index_storage() -> None:
     validator = (PROJECT_ROOT / "scripts" / "validate_lerobot_v3.py").read_text(encoding="utf-8")
     assert 'tasks.index.name == "task"' in validator
     assert "tasks = tasks.reset_index()" in validator
+
+
+def _write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def test_pipeline_runs_collection_before_conversion(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    calls = tmp_path / "calls.txt"
+    collector = tmp_path / "collect.sh"
+    window = tmp_path / "window.sh"
+    converter = tmp_path / "convert.sh"
+
+    _write_executable(
+        collector,
+        """#!/usr/bin/env bash
+set -eu
+dataset=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in --dataset) dataset="$2"; shift 2;; *) shift;; esac
+done
+echo collect >> "$HKC_TEST_CALLS"
+mkdir -p "$HKC_SIM_RUNTIME_ROOT/raw/$dataset"
+printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/raw/$dataset/manifest.json"
+""",
+    )
+    _write_executable(window, "#!/usr/bin/env bash\nexit 99\n")
+    _write_executable(
+        converter,
+        """#!/usr/bin/env bash
+set -eu
+output=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in --output) output="$2"; shift 2;; *) shift;; esac
+done
+echo convert >> "$HKC_TEST_CALLS"
+mkdir -p "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta"
+printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta/info.json"
+""",
+    )
+
+    env = os.environ | {
+        "HKC_SIM_RUNTIME_ROOT": str(runtime),
+        "HKC_PIPELINE_COLLECT_SCRIPT": str(collector),
+        "HKC_PIPELINE_WINDOW_SCRIPT": str(window),
+        "HKC_PIPELINE_CONVERT_SCRIPT": str(converter),
+        "HKC_TEST_CALLS": str(calls),
+    }
+    result = subprocess.run(
+        [
+            str(PROJECT_ROOT / "scripts" / "collect_and_convert.sh"),
+            "--dataset",
+            "pipeline-test",
+        ],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == ["collect", "convert"]
+    assert (runtime / "raw/pipeline-test/manifest.json").is_file()
+    assert (runtime / "lerobot/pipeline-test-lerobot-v3/meta/info.json").is_file()
+    assert (runtime / "logs/pipeline-test-pipeline.log").is_file()
+
+
+def test_pipeline_preserves_raw_dataset_when_conversion_fails(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    collector = tmp_path / "collect.sh"
+    window = tmp_path / "window.sh"
+    converter = tmp_path / "convert.sh"
+
+    _write_executable(
+        collector,
+        """#!/usr/bin/env bash
+set -eu
+dataset=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in --dataset) dataset="$2"; shift 2;; *) shift;; esac
+done
+mkdir -p "$HKC_SIM_RUNTIME_ROOT/raw/$dataset"
+printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/raw/$dataset/manifest.json"
+""",
+    )
+    _write_executable(window, "#!/usr/bin/env bash\nexit 99\n")
+    _write_executable(converter, "#!/usr/bin/env bash\nexit 42\n")
+
+    env = os.environ | {
+        "HKC_SIM_RUNTIME_ROOT": str(runtime),
+        "HKC_PIPELINE_COLLECT_SCRIPT": str(collector),
+        "HKC_PIPELINE_WINDOW_SCRIPT": str(window),
+        "HKC_PIPELINE_CONVERT_SCRIPT": str(converter),
+    }
+    result = subprocess.run(
+        [
+            str(PROJECT_ROOT / "scripts" / "collect_and_convert.sh"),
+            "--dataset",
+            "conversion-fails",
+        ],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 42
+    assert (runtime / "raw/conversion-fails/manifest.json").is_file()
+    assert not (runtime / "lerobot/conversion-fails-lerobot-v3").exists()
+    assert "completed raw HDF5 dataset has been preserved" in result.stdout
+
+
+def test_pipeline_rejects_existing_raw_dataset_before_collection(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    (runtime / "raw/already-there").mkdir(parents=True)
+    no_op = tmp_path / "no-op.sh"
+    _write_executable(no_op, "#!/usr/bin/env bash\nexit 88\n")
+
+    env = os.environ | {
+        "HKC_SIM_RUNTIME_ROOT": str(runtime),
+        "HKC_PIPELINE_COLLECT_SCRIPT": str(no_op),
+        "HKC_PIPELINE_WINDOW_SCRIPT": str(no_op),
+        "HKC_PIPELINE_CONVERT_SCRIPT": str(no_op),
+    }
+    result = subprocess.run(
+        [
+            str(PROJECT_ROOT / "scripts" / "collect_and_convert.sh"),
+            "--dataset",
+            "already-there",
+        ],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Raw dataset already exists" in result.stderr
