@@ -74,6 +74,11 @@ patches = [
         '    video_backend: str | None = "h264"\n',
     ),
     (
+        "offline non-streaming encoding",
+        "    streaming_encoding: bool = True\n",
+        "    streaming_encoding: bool = False\n",
+    ),
+    (
         "camera map",
         '''    "cam_right_wrist": [
         ("vision", "cam_right_wrist", "colors"),
@@ -121,6 +126,15 @@ patches = [
         '''    streaming_encoder.crf = dataset_config.video_crf
 ''',
         '''    streaming_encoder._rgb_encoder.crf = dataset_config.video_crf
+''',
+    ),
+    (
+        "non-streaming encoder guard",
+        '''    if not dataset_config.use_videos:
+        return
+''',
+        '''    if not dataset_config.use_videos or not dataset_config.streaming_encoding:
+        return
 ''',
     ),
 ]

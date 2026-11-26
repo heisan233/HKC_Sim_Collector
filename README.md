@@ -92,7 +92,8 @@ compose.yaml      本地与服务器共用的容器入口
 
 - 拒绝覆盖已有目标；
 - 先写入 `runtime/staging/`；
-- 验证 v3 元数据、Parquet、视频和首帧加载；
+- 使用离线视频编码，避免流式队列满时丢帧；
+- 验证 v3 元数据、Parquet、每路视频帧数和首帧加载；
 - 验证通过后原子发布到 `runtime/lerobot/<输出名称>/`；
 - 写入 `runtime/manifests/<输出名称>.json` 转换来源记录。
 

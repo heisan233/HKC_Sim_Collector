@@ -5,6 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
+import av
 import pandas as pd
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -15,6 +16,20 @@ def read_parquet_tree(root: Path) -> pd.DataFrame:
     if not paths:
         raise ValueError(f"No parquet files under {root}")
     return pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
+
+
+def read_video_frame_count(path: Path) -> int:
+    """Return the MP4 video stream frame count, decoding only as a fallback."""
+    try:
+        with av.open(str(path)) as container:
+            if not container.streams.video:
+                raise ValueError("no video stream")
+            stream = container.streams.video[0]
+            if stream.frames:
+                return int(stream.frames)
+            return sum(1 for _ in container.decode(stream))
+    except Exception as exc:  # PyAV exposes backend-specific exception classes.
+        raise ValueError(f"Cannot inspect video {path}: {exc}") from exc
 
 
 def main() -> None:
@@ -72,6 +87,22 @@ def main() -> None:
             f"Expected at least {len(video_features)} video files, found {len(video_files)}"
         )
 
+    video_frame_counts: dict[str, int] = {}
+    for feature in video_features:
+        feature_files = sorted((root / "videos" / feature).rglob("*.mp4"))
+        if not feature_files:
+            raise SystemExit(f"Video feature {feature!r} has no MP4 files")
+        try:
+            frame_count = sum(read_video_frame_count(path) for path in feature_files)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        video_frame_counts[feature] = frame_count
+        if frame_count != len(frames):
+            raise SystemExit(
+                f"Video feature {feature!r} has {frame_count} encoded frames, "
+                f"expected {len(frames)} frame parquet rows"
+            )
+
     dataset = LeRobotDataset(repo_id=f"local/{root.name}", root=root)
     if len(dataset) != len(frames):
         raise SystemExit(f"LeRobotDataset length {len(dataset)} != parquet rows {len(frames)}")
@@ -90,6 +121,7 @@ def main() -> None:
                 "tasks": len(tasks),
                 "video_features": video_features,
                 "video_files": len(video_files),
+                "video_frame_counts": video_frame_counts,
                 "action_shape": list(sample["action"].shape),
                 "state_shape": list(sample["observation.state"].shape),
             },

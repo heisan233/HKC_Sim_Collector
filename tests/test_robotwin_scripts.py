@@ -72,6 +72,9 @@ def test_converter_uses_locked_sources_and_preserves_third_view() -> None:
     assert "uv sync --frozen" in dockerfile
     assert '"h5py==3.11.0"' in dockerfile
     assert "portable H.264 encoder" in dockerfile
+    assert "offline non-streaming encoding" in dockerfile
+    assert "non-streaming encoder guard" in dockerfile
+    assert '"    streaming_encoding: bool = False\\n"' in dockerfile
 
 
 def test_converter_rejects_overwrite_and_publishes_atomically() -> None:
@@ -85,6 +88,14 @@ def test_validator_accepts_lerobot_task_index_storage() -> None:
     validator = (PROJECT_ROOT / "scripts" / "validate_lerobot_v3.py").read_text(encoding="utf-8")
     assert 'tasks.index.name == "task"' in validator
     assert "tasks = tasks.reset_index()" in validator
+
+
+def test_validator_requires_every_video_feature_to_match_parquet_frames() -> None:
+    validator = (PROJECT_ROOT / "scripts" / "validate_lerobot_v3.py").read_text(encoding="utf-8")
+    assert "def read_video_frame_count" in validator
+    assert "video_frame_counts" in validator
+    assert "encoded frames" in validator
+    assert "frame parquet rows" in validator
 
 
 def _write_executable(path: Path, content: str) -> None:
