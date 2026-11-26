@@ -10,7 +10,11 @@ echo "=== NVIDIA GPU ==="
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
 
 echo "=== Vulkan ==="
-vulkaninfo --summary | sed -n "1,100p"
+VULKAN_SUMMARY="$(vulkaninfo --summary 2>&1)" && VULKAN_STATUS=0 || VULKAN_STATUS=$?
+printf "%s\n" "${VULKAN_SUMMARY}" | sed -n "1,100p"
+if [[ "${VULKAN_STATUS}" -ne 0 ]]; then
+  echo "WARNING: generic vulkaninfo check failed (exit ${VULKAN_STATUS}); continuing with the required SAPIEN render check." >&2
+fi
 
 echo "=== Python / CUDA / SAPIEN / CuRobo ==="
 python3.10 - <<"PY"

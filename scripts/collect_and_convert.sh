@@ -27,6 +27,49 @@ EPISODES="1"
 EMBODIMENT="aloha-agilex"
 GPU="0"
 SHOW_WINDOW="false"
+LOADED_ENV_FILE=""
+
+load_project_env() {
+  local env_file="${HKC_SIM_ENV_FILE:-${PROJECT_ROOT}/.env}"
+  local line=""
+  local name=""
+  local allexport_was_set="false"
+  local -A preserved=()
+
+  if [[ ! -e "${env_file}" ]]; then
+    if [[ -n "${HKC_SIM_ENV_FILE:-}" ]]; then
+      echo "Environment file does not exist: ${env_file}" >&2
+      return 1
+    fi
+    return 0
+  fi
+  [[ -f "${env_file}" ]] || {
+    echo "Environment file is not a regular file: ${env_file}" >&2
+    return 1
+  }
+
+  # Explicitly exported variables take precedence over values in .env.
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+      name="${BASH_REMATCH[2]}"
+      if [[ -v "${name}" ]]; then
+        preserved["${name}"]="${!name}"
+      fi
+    fi
+  done < "${env_file}"
+
+  [[ "$-" == *a* ]] && allexport_was_set="true"
+  set -a
+  # shellcheck disable=SC1090
+  source "${env_file}"
+  [[ "${allexport_was_set}" == "true" ]] || set +a
+
+  for name in "${!preserved[@]}"; do
+    printf -v "${name}" '%s' "${preserved[${name}]}"
+    export "${name}"
+  done
+  LOADED_ENV_FILE="${env_file}"
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,6 +100,7 @@ done
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${PROJECT_ROOT}"
+load_project_env
 
 RUNTIME_ROOT="${HKC_SIM_RUNTIME_ROOT:-./runtime}"
 COLLECT_SCRIPT="${HKC_PIPELINE_COLLECT_SCRIPT:-${PROJECT_ROOT}/scripts/collect.sh}"
@@ -125,6 +169,7 @@ echo "Episodes:    ${EPISODES}"
 echo "Embodiment:  ${EMBODIMENT}"
 echo "GPU:         ${GPU}"
 echo "Window:      ${SHOW_WINDOW}"
+echo "Environment: ${LOADED_ENV_FILE:-not loaded}"
 echo "Log:         ${LOG_FILE}"
 
 COLLECT_ARGS=(

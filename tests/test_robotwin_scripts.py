@@ -43,6 +43,14 @@ def test_window_collection_is_explicit_and_keeps_normal_default() -> None:
     assert 'TASK_ENV.viewer.close()' in patcher
 
 
+def test_vulkaninfo_failure_is_warning_before_required_sapien_check() -> None:
+    script = (PROJECT_ROOT / "scripts" / "check_robotwin.sh").read_text(encoding="utf-8")
+    assert "VULKAN_STATUS" in script
+    assert "generic vulkaninfo check failed" in script
+    assert "continuing with the required SAPIEN render check" in script
+    assert 'print("SAPIEN renderer: OK")' in script
+
+
 def test_robotwin_dockerfile_uses_locked_commits() -> None:
     dockerfile = (PROJECT_ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
     lock = (PROJECT_ROOT / "docker" / "versions.lock.json").read_text(encoding="utf-8")
@@ -144,6 +152,83 @@ printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta/info.json"
     assert (runtime / "raw/pipeline-test/manifest.json").is_file()
     assert (runtime / "lerobot/pipeline-test-lerobot-v3/meta/info.json").is_file()
     assert (runtime / "logs/pipeline-test-pipeline.log").is_file()
+
+
+def test_pipeline_loads_env_file_without_overriding_explicit_environment(
+    tmp_path: Path,
+) -> None:
+    runtime_from_file = tmp_path / "runtime-from-file"
+    runtime_override = tmp_path / "runtime-override"
+    calls = tmp_path / "calls.txt"
+    collector = tmp_path / "collect.sh"
+    window = tmp_path / "window.sh"
+    converter = tmp_path / "convert.sh"
+    env_file = tmp_path / "collector.env"
+
+    _write_executable(
+        collector,
+        """#!/usr/bin/env bash
+set -eu
+dataset=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in --dataset) dataset="$2"; shift 2;; *) shift;; esac
+done
+echo collect >> "$HKC_TEST_CALLS"
+mkdir -p "$HKC_SIM_RUNTIME_ROOT/raw/$dataset"
+printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/raw/$dataset/manifest.json"
+""",
+    )
+    _write_executable(window, "#!/usr/bin/env bash\nexit 99\n")
+    _write_executable(
+        converter,
+        """#!/usr/bin/env bash
+set -eu
+output=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in --output) output="$2"; shift 2;; *) shift;; esac
+done
+echo convert >> "$HKC_TEST_CALLS"
+mkdir -p "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta"
+printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta/info.json"
+""",
+    )
+    env_file.write_text(
+        "\n".join(
+            (
+                f"HKC_SIM_RUNTIME_ROOT={runtime_from_file}",
+                f"HKC_PIPELINE_COLLECT_SCRIPT={collector}",
+                f"HKC_PIPELINE_WINDOW_SCRIPT={window}",
+                f"HKC_PIPELINE_CONVERT_SCRIPT={converter}",
+                f"HKC_TEST_CALLS={calls}",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    env = os.environ | {
+        "HKC_SIM_ENV_FILE": str(env_file),
+        "HKC_SIM_RUNTIME_ROOT": str(runtime_override),
+    }
+    result = subprocess.run(
+        [
+            str(PROJECT_ROOT / "scripts" / "collect_and_convert.sh"),
+            "--dataset",
+            "env-file-test",
+        ],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == ["collect", "convert"]
+    assert (runtime_override / "raw/env-file-test/manifest.json").is_file()
+    assert (runtime_override / "lerobot/env-file-test-lerobot-v3/meta/info.json").is_file()
+    assert not runtime_from_file.exists()
+    assert f"Environment: {env_file}" in result.stdout
 
 
 def test_pipeline_preserves_raw_dataset_when_conversion_fails(tmp_path: Path) -> None:
