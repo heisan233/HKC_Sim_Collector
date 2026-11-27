@@ -25,6 +25,7 @@ def test_robotwin_operational_scripts_exist() -> None:
         "validate_lerobot_v3.py",
         "prepare_three_camera_dataset.py",
         "prepare_three_camera_dataset.sh",
+        "load_project_env.sh",
     }
     scripts = {path.name for path in (PROJECT_ROOT / "scripts").iterdir()}
     assert expected.issubset(scripts)
@@ -410,6 +411,47 @@ printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta/info.json"
     assert (runtime_override / "lerobot/env-file-test-lerobot-v3/meta/info.json").is_file()
     assert not runtime_from_file.exists()
     assert f"Environment: {env_file}" in result.stdout
+
+
+def test_independent_entrypoints_load_project_env() -> None:
+    for name in ("collect.sh", "collect_windows.sh", "convert_to_lerobot.sh"):
+        script = (PROJECT_ROOT / "scripts" / name).read_text(encoding="utf-8")
+        assert 'source "${PROJECT_ROOT}/scripts/load_project_env.sh"' in script
+        assert 'hkc_load_project_env "${PROJECT_ROOT}"' in script
+
+
+def test_shared_env_loader_preserves_explicit_values(tmp_path: Path) -> None:
+    env_file = tmp_path / "collector.env"
+    env_file.write_text(
+        "HKC_SIM_RUNTIME_ROOT=/from-file\nHKC_SIM_GPU=all\n",
+        encoding="utf-8",
+    )
+    command = """
+set -Eeuo pipefail
+source "$1"
+HKC_SIM_RUNTIME_ROOT=/explicit
+export HKC_SIM_RUNTIME_ROOT
+HKC_SIM_ENV_FILE="$2"
+export HKC_SIM_ENV_FILE
+hkc_load_project_env "$3"
+printf '%s|%s|%s\n' "$HKC_SIM_RUNTIME_ROOT" "$HKC_SIM_GPU" "$HKC_LOADED_ENV_FILE"
+"""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            command,
+            "bash",
+            str(PROJECT_ROOT / "scripts" / "load_project_env.sh"),
+            str(env_file),
+            str(PROJECT_ROOT),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == f"/explicit|all|{env_file}"
 
 
 def test_pipeline_preserves_raw_dataset_when_conversion_fails(tmp_path: Path) -> None:

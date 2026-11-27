@@ -40,6 +40,9 @@ done
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${PROJECT_ROOT}"
+# shellcheck source=load_project_env.sh
+source "${PROJECT_ROOT}/scripts/load_project_env.sh"
+hkc_load_project_env "${PROJECT_ROOT}"
 RUNTIME_ROOT="${HKC_SIM_RUNTIME_ROOT:-./runtime}"
 mkdir -p "${RUNTIME_ROOT}"/{assets,staging,raw,lerobot,cache,logs,manifests}
 
