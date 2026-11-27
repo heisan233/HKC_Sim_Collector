@@ -43,6 +43,14 @@ def test_window_collection_is_explicit_and_keeps_normal_default() -> None:
     assert 'TASK_ENV.viewer.close()' in patcher
 
 
+def test_collection_entrypoints_accept_any_positive_episode_count() -> None:
+    for name in ("collect.sh", "collect_windows.sh", "collect_and_convert.sh"):
+        script = (PROJECT_ROOT / "scripts" / name).read_text(encoding="utf-8")
+        assert "episodes 1..3" not in script
+        assert "^[1-9][0-9]*$" in script
+        assert "Episodes must be a positive integer" in script
+
+
 def test_vulkaninfo_failure_is_warning_before_required_sapien_check() -> None:
     script = (PROJECT_ROOT / "scripts" / "check_robotwin.sh").read_text(encoding="utf-8")
     assert "VULKAN_STATUS" in script
@@ -163,6 +171,71 @@ printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta/info.json"
     assert (runtime / "raw/pipeline-test/manifest.json").is_file()
     assert (runtime / "lerobot/pipeline-test-lerobot-v3/meta/info.json").is_file()
     assert (runtime / "logs/pipeline-test-pipeline.log").is_file()
+
+
+def test_pipeline_forwards_episode_count_above_three(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    captured = tmp_path / "episodes.txt"
+    collector = tmp_path / "collect.sh"
+    window = tmp_path / "window.sh"
+    converter = tmp_path / "convert.sh"
+
+    _write_executable(
+        collector,
+        """#!/usr/bin/env bash
+set -eu
+dataset=""
+episodes=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dataset) dataset="$2"; shift 2;;
+    --episodes) episodes="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+printf '%s\n' "$episodes" > "$HKC_TEST_EPISODES"
+mkdir -p "$HKC_SIM_RUNTIME_ROOT/raw/$dataset"
+printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/raw/$dataset/manifest.json"
+""",
+    )
+    _write_executable(window, "#!/usr/bin/env bash\nexit 99\n")
+    _write_executable(
+        converter,
+        """#!/usr/bin/env bash
+set -eu
+output=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in --output) output="$2"; shift 2;; *) shift;; esac
+done
+mkdir -p "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta"
+printf '{}\n' > "$HKC_SIM_RUNTIME_ROOT/lerobot/$output/meta/info.json"
+""",
+    )
+
+    env = os.environ | {
+        "HKC_SIM_RUNTIME_ROOT": str(runtime),
+        "HKC_PIPELINE_COLLECT_SCRIPT": str(collector),
+        "HKC_PIPELINE_WINDOW_SCRIPT": str(window),
+        "HKC_PIPELINE_CONVERT_SCRIPT": str(converter),
+        "HKC_TEST_EPISODES": str(captured),
+    }
+    result = subprocess.run(
+        [
+            str(PROJECT_ROOT / "scripts" / "collect_and_convert.sh"),
+            "--dataset",
+            "five-episodes",
+            "--episodes",
+            "5",
+        ],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert captured.read_text(encoding="utf-8").strip() == "5"
 
 
 def test_pipeline_loads_env_file_without_overriding_explicit_environment(

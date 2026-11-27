@@ -4,7 +4,7 @@ set -Eeuo pipefail
 usage() {
   cat <<'EOF'
 Usage: collect_and_convert.sh --dataset NAME [--output NAME]
-                              [--task TASK] [--episodes 1..3]
+                              [--task TASK] [--episodes POSITIVE_INTEGER]
                               [--embodiment NAME] [--gpu INDEX]
                               [--show-window]
 
@@ -95,7 +95,7 @@ for value in "${DATASET}" "${OUTPUT}"; do
   }
 done
 [[ "${TASK}" =~ ^[a-z0-9_]+$ ]] || { echo "Invalid task name: ${TASK}" >&2; exit 2; }
-[[ "${EPISODES}" =~ ^[1-3]$ ]] || { echo "Episodes must be between 1 and 3" >&2; exit 2; }
+[[ "${EPISODES}" =~ ^[1-9][0-9]*$ ]] || { echo "Episodes must be a positive integer" >&2; exit 2; }
 [[ "${GPU}" =~ ^[0-9]+$ ]] || { echo "Invalid GPU index: ${GPU}" >&2; exit 2; }
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

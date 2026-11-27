@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: collect_windows.sh --dataset NAME [--task TASK] [--episodes 1..3]
+Usage: collect_windows.sh --dataset NAME [--task TASK] [--episodes POSITIVE_INTEGER]
                           [--embodiment NAME] [--gpu INDEX]
 
 Runs RoboTwin with visible planning and collection windows.
@@ -37,7 +37,7 @@ done
 [[ -n "${DATASET}" ]] || { usage >&2; exit 2; }
 [[ "${DATASET}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]] || { echo "Invalid dataset name" >&2; exit 2; }
 [[ "${TASK}" =~ ^[a-z0-9_]+$ ]] || { echo "Invalid task name" >&2; exit 2; }
-[[ "${EPISODES}" =~ ^[1-3]$ ]] || { echo "Window collection accepts only 1 to 3 episodes" >&2; exit 2; }
+[[ "${EPISODES}" =~ ^[1-9][0-9]*$ ]] || { echo "Episodes must be a positive integer" >&2; exit 2; }
 [[ "${GPU}" =~ ^[0-9]+$ ]] || { echo "Invalid GPU index" >&2; exit 2; }
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
