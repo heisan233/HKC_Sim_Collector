@@ -92,6 +92,7 @@ compose.yaml      本地与服务器共用的容器入口
 
 - 拒绝覆盖已有目标；
 - 先写入 `runtime/staging/`；
+- 将采集 manifest 的真实 `embodiment` 写入 `meta/info.json.robot_type`；
 - 使用离线视频编码，避免流式队列满时丢帧；
 - 验证 v3 元数据、Parquet、每路视频帧数和首帧加载；
 - 验证通过后原子发布到 `runtime/lerobot/<输出名称>/`；
@@ -121,6 +122,9 @@ compose.yaml      本地与服务器共用的容器入口
 统一入口不会合并两个镜像：RoboTwin 镜像仍负责 HDF5 采集，LeRobot 镜像仍负责
 转换与验证。采集失败时不会开始转换；转换失败时保留已经完成的原始 HDF5，便于
 修复后单独重试。完整日志写入 `runtime/logs/<数据集名称>-pipeline.log`。
+
+平台上传时，仿真机器人档案的类型必须与采集使用的 `--embodiment` 完全一致。
+例如 `--embodiment aloha-agilex` 会生成 `robot_type="aloha-agilex"`。
 
 ## 数据位置
 

@@ -36,6 +36,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--expected-episodes", type=int, required=True)
+    parser.add_argument("--expected-robot-type")
     args = parser.parse_args()
 
     root = args.root.resolve()
@@ -53,6 +54,13 @@ def main() -> None:
     info = json.loads((root / "meta" / "info.json").read_text(encoding="utf-8"))
     if info.get("codebase_version") != "v3.0":
         raise SystemExit(f"Expected codebase_version=v3.0, got {info.get('codebase_version')!r}")
+    if args.expected_robot_type is not None:
+        actual_robot_type = info.get("robot_type")
+        if actual_robot_type != args.expected_robot_type:
+            raise SystemExit(
+                f"Expected robot_type={args.expected_robot_type!r}, "
+                f"got {actual_robot_type!r}"
+            )
 
     tasks = pd.read_parquet(root / "meta" / "tasks.parquet")
     # LeRobot v3 persists `task` as the pandas index in tasks.parquet. Pandas

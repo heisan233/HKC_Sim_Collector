@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -20,7 +21,10 @@ def test_robotwin_operational_scripts_exist() -> None:
         "collect_and_convert.sh",
         "convert_to_lerobot.sh",
         "convert_in_container.sh",
+        "apply_lerobot_metadata.py",
         "validate_lerobot_v3.py",
+        "prepare_three_camera_dataset.py",
+        "prepare_three_camera_dataset.sh",
     }
     scripts = {path.name for path in (PROJECT_ROOT / "scripts").iterdir()}
     assert expected.issubset(scripts)
@@ -104,6 +108,99 @@ def test_validator_requires_every_video_feature_to_match_parquet_frames() -> Non
     assert "video_frame_counts" in validator
     assert "encoded frames" in validator
     assert "frame parquet rows" in validator
+
+
+def test_conversion_applies_and_validates_manifest_robot_type() -> None:
+    converter = (PROJECT_ROOT / "scripts" / "convert_in_container.sh").read_text(
+        encoding="utf-8"
+    )
+    validator = (PROJECT_ROOT / "scripts" / "validate_lerobot_v3.py").read_text(
+        encoding="utf-8"
+    )
+    assert "apply_lerobot_metadata.py" in converter
+    assert '--payload-embodiment "${ENV_CFG_TYPE}"' in converter
+    assert '--expected-robot-type "${EXPECTED_ROBOT_TYPE}"' in converter
+    assert 'parser.add_argument("--expected-robot-type")' in validator
+
+
+def test_three_camera_conversion_has_explicit_mapping_and_is_non_destructive() -> None:
+    converter = (PROJECT_ROOT / "scripts" / "prepare_three_camera_dataset.py").read_text(
+        encoding="utf-8"
+    )
+    wrapper = (PROJECT_ROOT / "scripts" / "prepare_three_camera_dataset.sh").read_text(
+        encoding="utf-8"
+    )
+    assert '"observation.images.cam_high": "observation.images.image"' in converter
+    assert '"observation.images.cam_left_wrist": "observation.images.image2"' in converter
+    assert '"observation.images.cam_right_wrist": "observation.images.image3"' in converter
+    assert 'DROPPED_CAMERAS = ("observation.images.cam_third_view",)' in converter
+    assert "shutil.copytree" in converter
+    assert "Source and output datasets must be different" in converter
+    assert 'RUNTIME_ROOT}/update_data/${OUTPUT}' in wrapper
+    assert 'RUNTIME_ROOT}/lerobot/${SOURCE}' in wrapper
+
+
+def test_metadata_sync_uses_manifest_embodiment_as_robot_type(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    info = tmp_path / "info.json"
+    manifest.write_text(
+        '{"embodiment": "aloha-agilex", "task": "beat_block_hammer"}\n',
+        encoding="utf-8",
+    )
+    info.write_text(
+        '{"codebase_version": "v3.0", "robot_type": "unified_robot"}\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(PROJECT_ROOT / "scripts" / "apply_lerobot_metadata.py"),
+            "--source-manifest",
+            str(manifest),
+            "--info",
+            str(info),
+            "--payload-embodiment",
+            "aloha_agilex",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "aloha-agilex"
+    assert json.loads(info.read_text(encoding="utf-8"))["robot_type"] == "aloha-agilex"
+
+
+def test_metadata_sync_rejects_manifest_payload_embodiment_mismatch(
+    tmp_path: Path,
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    info = tmp_path / "info.json"
+    manifest.write_text('{"embodiment": "aloha-agilex"}\n', encoding="utf-8")
+    original = '{"codebase_version": "v3.0", "robot_type": "unified_robot"}\n'
+    info.write_text(original, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(PROJECT_ROOT / "scripts" / "apply_lerobot_metadata.py"),
+            "--source-manifest",
+            str(manifest),
+            "--info",
+            str(info),
+            "--payload-embodiment",
+            "piper",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "does not match the payload directory" in result.stderr
+    assert info.read_text(encoding="utf-8") == original
 
 
 def _write_executable(path: Path, content: str) -> None:

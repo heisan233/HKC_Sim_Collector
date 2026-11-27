@@ -53,9 +53,14 @@ python /opt/robotwin/XPolicyLab/scripts/transform_lerobot_v30_format.py \
   --max_episode "${EXPECTED_EPISODES}"
 
 DATASET_ROOT="${WORK}/hf/local/${HKC_OUTPUT_DATASET}"
+EXPECTED_ROBOT_TYPE="$(python /workspace/scripts/apply_lerobot_metadata.py \
+  --source-manifest "${SOURCE}/manifest.json" \
+  --info "${DATASET_ROOT}/meta/info.json" \
+  --payload-embodiment "${ENV_CFG_TYPE}")"
 python /workspace/scripts/validate_lerobot_v3.py \
   --root "${DATASET_ROOT}" \
-  --expected-episodes "${EXPECTED_EPISODES}"
+  --expected-episodes "${EXPECTED_EPISODES}" \
+  --expected-robot-type "${EXPECTED_ROBOT_TYPE}"
 
 python - "${SOURCE}/manifest.json" "${DATASET_ROOT}/meta/hkc_conversion.json" <<'PY'
 import json
@@ -67,6 +72,7 @@ source = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 record = {
     "source": source,
     "output_format": "LeRobot v3.0",
+    "robot_type": source["embodiment"],
     "lerobot_commit": "dc0cee9c75e3cc684e4756013e214888176f2c15",
     "xpolicylab_commit": "fa431ecd893ee706883e64fe5fe1464ec8cd928d",
     "converted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
